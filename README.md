@@ -1,6 +1,6 @@
 # PDFuser
 
-A simple Windows app for merging PDF files.
+A simple Windows app for merging PDF files. I made this because the online ones either cost money (adobe cough cough) or just are difficult to use due to a bad UI or fishy download links once you've made the file.
 
 ## Features
 
