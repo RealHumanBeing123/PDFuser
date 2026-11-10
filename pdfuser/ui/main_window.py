@@ -96,6 +96,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self._last_dir = str(Path.home())
         self._thread: QThread | None = None
+        self._dlg = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -340,31 +341,50 @@ class MainWindow(QMainWindow):
             out += ".pdf"
 
         self.merge_btn.setEnabled(False)
-        dlg = QProgressDialog("Merging...", "Cancel", 0, len(entries), self)
-        dlg.setWindowModality(Qt.WindowModal)
-        dlg.setMinimumDuration(300)
+        self._merge_out = out
+        self._merge_count = len(entries)
 
-        self._thread = QThread(self)
+        self._dlg = QProgressDialog("Merging...", "Cancel", 0, len(entries), self)
+        self._dlg.setWindowModality(Qt.WindowModal)
+        self._dlg.setMinimumDuration(300)
+        self._dlg.setAutoClose(False)
+        self._dlg.setAutoReset(False)
+
+        self._thread = QThread()
         self._worker = MergeWorker(entries, out, self.bookmarks.isChecked())
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(lambda n, total: dlg.setValue(n))
-        dlg.canceled.connect(self._worker.cancel)
-
-        def done(pages: int, error: str):
-            dlg.close()
-            self._thread.quit()
-            self._thread.wait()
-            self._update_buttons()
-            if error:
-                if error != "Cancelled.":
-                    QMessageBox.critical(self, "Merge failed", error)
-                self._set_hint("Merge cancelled." if error == "Cancelled." else "Merge failed.")
-            else:
-                self._set_hint(f"Saved {pages} pages to {out}")
-                box = QMessageBox(QMessageBox.Information, "Done",
-                                  f"Merged {len(entries)} file(s) into {pages} pages.\n\n{out}", parent=self)
-                box.exec()
-
-        self._worker.finished.connect(done)
+        # Slots are bound methods of this window, so Qt delivers them on the GUI thread.
+        # (Plain lambdas would run on the worker thread and break the dialogs.)
+        self._worker.progress.connect(self._on_merge_progress)
+        self._worker.finished.connect(self._on_merge_finished)
+        self._dlg.canceled.connect(self._worker.cancel)
         self._thread.start()
+
+    def _on_merge_progress(self, n: int, total: int):
+        if self._dlg is not None:
+            self._dlg.setValue(n)
+
+    def _on_merge_finished(self, pages: int, error: str):
+        dlg, self._dlg = self._dlg, None
+        if dlg is not None:
+            dlg.canceled.disconnect()
+            dlg.close()
+            dlg.deleteLater()
+        self._thread.quit()
+        self._thread.wait()
+        self._thread.deleteLater()
+        self._worker.deleteLater()
+        self._thread = None
+        self._update_buttons()
+
+        if error == "Cancelled.":
+            self._set_hint("Merge cancelled.")
+        elif error:
+            self._set_hint("Merge failed.")
+            QMessageBox.critical(self, "Merge failed", error)
+        else:
+            self._set_hint(f"Saved {pages} pages to {self._merge_out}")
+            QMessageBox.information(
+                self, "Done",
+                f"Merged {self._merge_count} file(s) into {pages} pages.\n\n{self._merge_out}")

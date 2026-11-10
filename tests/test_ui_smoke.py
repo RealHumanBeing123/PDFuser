@@ -91,3 +91,45 @@ def test_end_to_end_merge(app, tmp_path):
     out.parent.mkdir()
     assert merge(win.entries(), out) == 4
     assert len(PdfReader(str(out)).pages) == 4
+
+
+def test_window_stays_usable_after_merge(app, tmp_path, monkeypatch):
+    """Regression: the finish handler must run on the GUI thread, and a second merge must work."""
+    import threading
+    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    make_pdf(tmp_path / "1.pdf", 2)
+    make_pdf(tmp_path / "2.pdf", 2)
+    win = MainWindow()
+    win.show()
+    win.add_paths([str(tmp_path)])
+
+    shown, threads = [], []
+    outs = iter([str(tmp_path / "m1.pdf"), str(tmp_path / "m2.pdf")])
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (next(outs), ""))
+    monkeypatch.setattr(QMessageBox, "information",
+                        lambda *a, **k: (shown.append(a[2]), threads.append(threading.current_thread())))
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: shown.append("ERR " + a[2]))
+
+    for n in (1, 2):
+        win.start_merge()
+        loop = QEventLoop()
+        timer = QTimer()
+        timer.setInterval(20)
+
+        def check():
+            if len(shown) >= n:
+                loop.quit()
+        timer.timeout.connect(check)
+        timer.start()
+        QTimer.singleShot(5000, loop.quit)
+        loop.exec()
+        timer.stop()
+        assert len(shown) == n, shown
+        assert not shown[-1].startswith("ERR")
+        assert win._dlg is None and win._thread is None
+        assert win.merge_btn.isEnabled() and win.isEnabled()
+        assert not QApplication.activeModalWidget()
+    assert all(t is threading.main_thread() for t in threads)
+    assert len(PdfReader(str(tmp_path / "m2.pdf")).pages) == 4
