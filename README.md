@@ -26,6 +26,11 @@ python run.py            # optionally: python run.py file1.pdf some_folder
 
 On Windows, run `build_exe.bat` (produces `dist\PDFuser.exe`). On GitHub, the **Build** workflow does this automatically; download `PDFuser-windows` from the run's artifacts, or push a tag like `v0.1.0` to attach the exe to a release.
 
+## Screenshots
+<img width="629" height="453" alt="pdf1" src="https://github.com/user-attachments/assets/ac2b41c0-7b77-4ea3-9363-08ff6fccb61b" />
+<img width="687" height="517" alt="pdf2" src="https://github.com/user-attachments/assets/96267cb2-0612-4b00-b270-acb0f8ac540a" />
+
+
 ## Tests
 
 ```
